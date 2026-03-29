@@ -1,13 +1,36 @@
 package compiler
 
 import scala.io.Source
+import java.io.File
 
-abstract class Token
-case class KeywordToken(kw : String) extends Token
-case class SymbolToken(sym : Char) extends Token
-case class IntegerToken(int : scala.Int) extends Token
-case class StringToken(str : String) extends Token
-case class IDToken(id : String) extends Token
+abstract class Token {
+  def getXML : String
+}
+
+case class KeywordToken(kw : String) extends Token {
+  override def getXML : String = "<keyword> " + kw + " </keyword>"
+}
+
+case class SymbolToken(sym : Char) extends Token {
+  override def getXML : String =
+    sym match
+      case '<' => "<symbol> &lt; </symbol>"
+      case '>' => "<symbol> &gt; </symbol>"
+      case '&' => "<symbol> &amp; </symbol>"
+      case _ => "<symbol> " + sym + " </symbol>"
+}
+
+case class IntegerToken(int : scala.Int) extends Token {
+  override def getXML: String = "<integerConstant> " + int.toString() + " </integerConstant>"
+}
+
+case class StringToken(str : String) extends Token {
+  override def getXML: String = "<stringConstant> " + str + " </stringConstant>"
+}
+
+case class IDToken(id : String) extends Token {
+  override def getXML: String = "<identifier> " + id + " </identifier>"
+}
 
 class Compiler (val src : Source) {
 
@@ -130,7 +153,9 @@ class Compiler (val src : Source) {
   def nextToken() : Option[Token] = {
     if !hasNextToken() then return None
     if symbols.contains(curChar) then
-      Some(SymbolToken(curChar))
+      val symbolChar = curChar
+      nextChar()
+      Some(SymbolToken(symbolChar))
     else if curChar.isLetter || curChar == '_' then
       Some(nextKeywordOrIdentifier())
     else if curChar.isDigit then
@@ -140,5 +165,22 @@ class Compiler (val src : Source) {
       Some(nextString())
     else
       None
+  }
+
+  def printXML : Unit = {
+    println("<tokens>")
+    while hasNextToken() do
+      nextToken() match
+        case Some[Token](token) => println(token.getXML)
+        case None =>
+    println("</tokens>")
+  }
+}
+
+object Compiler {
+  def main(args : Array[String]) : Unit = {
+    val srcFile = File(args(0))
+    val compiler = new Compiler(Source.fromFile(srcFile))
+    compiler.printXML
   }
 }
