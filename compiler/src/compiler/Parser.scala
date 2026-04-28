@@ -4,46 +4,31 @@ package compiler
 import java.io.File
 import java.io.PrintWriter
 import scala.io.Source
-import scala.compiletime.ops.double
-import java.awt.RenderingHints.Key
-import java.lang.reflect.Parameter
 
-class ProgramElement( children : List[ProgramElement] ) {
+class ProgramElement( val children : List[ProgramElement], val xmlTagName : String ):
     // def getXML : String
     def writeXML( writer : PrintWriter, indent : String = "" ) : Unit =
+        writer.println(indent + "<" + xmlTagName + ">")
         for child <- children do
             child.writeXML(writer, indent + "  ")
-}
+        writer.println(indent + "</" + xmlTagName + ">")
 
-case class ClassElement( children : List[ProgramElement] ) extends ProgramElement(children) {
-    // def getXML : String = "<class><identifier>" + name + "</identifier></class>"<identifier>" + name + "</identifier></class>"
-    override def writeXML(writer: PrintWriter, indent : String = ""): Unit =
-        writer.println(indent + "<class>")
-        super.writeXML(writer, indent)
-        writer.println(indent + "</class>")
-}
+case class ClassElement( override val children : List[ProgramElement] ) extends ProgramElement(children, "class")
+case class ClassVarDec( override val children : List[ProgramElement] ) extends ProgramElement(children, "classVarDec")
+case class SubroutineDec( override val children : List[ProgramElement] ) extends ProgramElement(children, "subroutineDec")
+case class ParameterList( override val children : List[ProgramElement] ) extends ProgramElement(children, "parameterList")
+case class SubroutineBody( override val children : List[ProgramElement] ) extends ProgramElement(children, "subroutineBody")
+case class VarDec( override val children : List[ProgramElement] ) extends ProgramElement(children, "varDec")
+case class StatementList( override val children : List[ProgramElement] ) extends ProgramElement(children, "statements")
+case class LetStatement( override val children : List[ProgramElement] ) extends ProgramElement(children, "letStatement")
+case class IfStatement( override val children : List[ProgramElement] ) extends ProgramElement(children, "ifStatement")
+case class WhileStatement( override val children : List[ProgramElement] ) extends ProgramElement(children, "whileStatement")
+case class doStatement( override val children : List[ProgramElement] ) extends ProgramElement(children, "doStatement")
+case class returnStatement( override val children : List[ProgramElement] ) extends ProgramElement(children, "returnStatement")
 
-case class ClassVarDec( children : List[ProgramElement] ) extends ProgramElement(children):
-    override def writeXML(writer: PrintWriter, indent: String): Unit =
-        writer.println(indent + "<classVarDec>")
-        super.writeXML(writer, indent)
-        writer.println(indent + "</classVarDec>")
+class Parser (val file : File):
 
-case class SubroutineDec( children : List[ProgramElement] ) extends ProgramElement(children):
-    override def writeXML(writer: PrintWriter, indent: String): Unit =
-        writer.println(indent + "<subroutineDec>")
-        super.writeXML(writer, indent)
-        writer.println(indent + "</subroutineDec>")
-
-case class ParameterList( children : List[ProgramElement] ) extends ProgramElement(children):
-    override def writeXML(writer: PrintWriter, indent: String): Unit =
-        writer.println(indent + "<parameterList>")
-        super.writeXML(writer, indent)
-        writer.println(indent + "</parameterList")
-
-class Parser (val file : File) {
-
-    def parse : Unit = {
+    def parse : Unit =
         val srcFileIter = if file.isFile() then Iterator[File](file) else file.listFiles().iterator
         for srcFile <- srcFileIter if srcFile.getName().endsWith(".jack") do
             val compiler = Compiler(Source.fromFile(srcFile))
@@ -57,7 +42,6 @@ class Parser (val file : File) {
                             case _ =>
                     case _ =>
             xmlWriter.close()
-    }
 
     def parseClass( compiler : Compiler, children : List[ProgramElement] ) : Option[ClassElement] =
         val nextToken = compiler.nextToken() match
@@ -99,20 +83,59 @@ class Parser (val file : File) {
         if nextToken.isEmpty then
             return None
         else if nextToken.head == SymbolToken('{') then
-            return Some(SubroutineDec(children))
+            return parseSubroutineBody(compiler, nextToken) match
+                case Some(body : SubroutineBody) => Some(SubroutineDec(children ::: List(body)))
+                case _ => None
         val nextChild = nextToken.head match
             case openParenSymbol : SymbolToken =>
                 openParenSymbol.sym match
                     case '(' =>
                         parseParameterList(compiler, Nil) match
-                            case Some(list : ParameterList) => List(openParenSymbol, list)
+                            case Some(list : ParameterList) => List(openParenSymbol, list, SymbolToken(')'))
                             case _ => Nil
                     case _ => List(openParenSymbol)
             case child : ProgramElement => List(child)
         parseSubroutineDec(compiler, children ::: nextChild)
 
-    def parseParameterList( compiler : Compiler, children : List[ProgramElement] ) : Option[ParameterList] = Some(ParameterList(children))
-}
+    def parseParameterList( compiler : Compiler, children : List[ProgramElement] ) : Option[ParameterList] =
+        val nextToken = compiler.nextToken() match
+            case Some(token : Token) => List(token)
+            case _ => Nil
+        if nextToken.isEmpty then
+            return None
+        else if nextToken.head == SymbolToken(')') then
+            return Some(ParameterList(children))
+        parseParameterList(compiler, children ::: nextToken)
+
+    def parseSubroutineBody( compiler : Compiler, children : List[ProgramElement] ) : Option[SubroutineBody] =
+        val nextToken = compiler.nextToken() match
+            case Some(token : Token) => List(token)
+            case _ => Nil
+        if nextToken.isEmpty then
+            return None
+        else if nextToken.head == SymbolToken('}') then
+            return Some(SubroutineBody(children ::: nextToken))
+        val nextChild = nextToken.head match
+            case kw : KeywordToken =>
+                kw.kw match
+                    case "var" =>
+                        parseVarDec(compiler, List(kw)) match
+                            case Some(varDec : VarDec) => List(varDec)
+                            case _ => Nil
+                    case _ => List(kw)
+            case child : ProgramElement => List(child)
+        parseSubroutineBody(compiler, children ::: nextChild)
+
+    def parseVarDec( compiler : Compiler, children : List[ProgramElement] ) : Option[VarDec] =
+        val nextToken = compiler.nextToken() match
+            case Some(token : Token) => List(token)
+            case _ => Nil
+        if nextToken.isEmpty then
+            return None
+        else if nextToken.head == SymbolToken(';') then
+            return Some(VarDec(children ::: nextToken))
+        parseVarDec(compiler, children ::: nextToken)
+        
 
 object Parser {
 
