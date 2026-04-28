@@ -2,8 +2,10 @@ package compiler
 
 import scala.io.Source
 import java.io.File
+import java.io.PrintWriter
 
-abstract class Token {
+abstract class Token extends ProgramElement(children = Nil) {
+  override def writeXML(writer: PrintWriter, indent: String): Unit = writer.println(indent + getXML)
   def getXML : String
 }
 
