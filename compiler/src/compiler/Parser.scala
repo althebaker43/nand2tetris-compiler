@@ -4,6 +4,7 @@ package compiler
 import java.io.File
 import java.io.PrintWriter
 import scala.io.Source
+import javax.net.ssl.TrustManager
 
 class ProgramElement( val children : List[ProgramElement], val xmlTagName : String ):
     // def getXML : String
@@ -25,7 +26,7 @@ case class IfStatement( override val children : List[ProgramElement] ) extends P
 case class WhileStatement( override val children : List[ProgramElement] ) extends ProgramElement(children, "whileStatement")
 case class DoStatement( override val children : List[ProgramElement] ) extends ProgramElement(children, "doStatement")
 case class ReturnStatement( override val children : List[ProgramElement] ) extends ProgramElement(children, "returnStatement")
-case class Expression( override val children : List[ProgramElement] ) extends ProgramElement(children, "expression")
+case class Expression( override val children : List[ProgramElement], lastSym : SymbolToken ) extends ProgramElement(children, "expression")
 case class ExpressionTerm( override val children : List[ProgramElement] ) extends ProgramElement(children, "term")
 case class ExpressionList( override val children : List[ProgramElement] ) extends ProgramElement(children, "expressionList")
 
@@ -34,6 +35,7 @@ class Parser (val file : File):
     def parse : Unit =
         val srcFileIter = if file.isFile() then Iterator[File](file) else file.listFiles().iterator
         for srcFile <- srcFileIter if srcFile.getName().endsWith(".jack") do
+            println("Parsing file " + srcFile.getName())
             val compiler = Compiler(Source.fromFile(srcFile))
             val xmlFilePath = srcFile.getPath().substring(0, srcFile.getPath().length()-5) + "_mine.xml"
             val xmlWriter = PrintWriter(xmlFilePath)
@@ -205,12 +207,18 @@ class Parser (val file : File):
                     case '[' | '=' =>
                         compiler.nextToken() match
                             case Some(exprToken : Token) =>
-                                parseExpression(compiler, List(exprToken)) match
-                                    case Some(expr : Expression) => List(sym, expr)
+                                parseExpression(compiler, Nil, Some(exprToken)) match
+                                    case Some(expr : Expression) =>
+                                        sym.sym match
+                                            case '[' => List(sym, expr, SymbolToken(']'))
+                                            case '=' => List(sym, expr, SymbolToken(';'))
+                                            case _ => List(sym, expr)
                                     case _ => Nil
                             case _ => Nil
                     case _ => List(sym)
             case child : ProgramElement => List(child)
+        if !nextChild.isEmpty && (nextChild.last == SymbolToken(';')) then
+            return Some(LetStatement(children ::: nextChild))
         parseLetStatement(compiler, children ::: nextChild)
 
     def parseDoStatement( compiler : Compiler, children : List[ProgramElement] ) : Option[DoStatement] =
@@ -246,8 +254,8 @@ class Parser (val file : File):
                     case '(' =>
                         compiler.nextToken() match
                             case Some(exprToken : Token) =>
-                                parseExpression(compiler, List(exprToken)) match
-                                    case Some(expr : Expression) => List(sym, expr)
+                                parseExpression(compiler, Nil, Some(exprToken)) match
+                                    case Some(expr : Expression) => List(sym, expr, SymbolToken(')'))
                                     case _ => Nil
                             case _ => Nil
                     case '{' =>
@@ -274,8 +282,8 @@ class Parser (val file : File):
                     case '(' =>
                         compiler.nextToken() match
                             case Some(exprToken : Token) =>
-                                parseExpression(compiler, List(exprToken)) match
-                                    case Some(expr : Expression) => List(sym, expr)
+                                parseExpression(compiler, Nil, Some(exprToken)) match
+                                    case Some(expr : Expression) => List(sym, expr, SymbolToken(')'))
                                     case _ => Nil
                             case _ => Nil
                     case '{' =>
@@ -297,13 +305,149 @@ class Parser (val file : File):
         else if nextToken.head == SymbolToken(';') then
             return Some(ReturnStatement(children ::: nextToken))
         val nextChild =
-            parseExpression(compiler, List(nextToken.head)) match
-                case Some(expr : Expression) => List(expr)
+            parseExpression(compiler, Nil, Some(nextToken.head)) match
+                case Some(expr : Expression) => List(expr, SymbolToken(';'))
                 case _ => Nil
-        parseReturnStatement(compiler, children ::: nextChild)
+        Some(ReturnStatement(children ::: nextChild))
 
-    def parseExpression( compiler : Compiler, children : List[ProgramElement] ) : Option[Expression] =
-        Some(Expression(List(ExpressionTerm(children))))
+    def parseExpression( compiler : Compiler, children : List[ProgramElement], firstToken : Option[Token] = None ) : Option[Expression] =
+        val nextToken = 
+            firstToken match
+                case Some(token : Token) => List(token)
+                case _ => compiler.nextToken() match
+                    case Some(token : Token) => List(token)
+                    case _ => Nil
+        if nextToken.isEmpty then
+            return None
+        else if nextToken.head == SymbolToken(')') then
+            return Some(Expression(children, SymbolToken(')')))
+        else if nextToken.head == SymbolToken(']') then
+            return Some(Expression(children, SymbolToken(']')))
+        else if nextToken.head == SymbolToken(';') then
+            return Some(Expression(children, SymbolToken(';')))
+        else if nextToken.head == SymbolToken(',') then
+            return Some(Expression(children, SymbolToken(',')))
+        val nextChild = firstToken match
+            case Some(sym : SymbolToken) =>
+                sym.sym match
+                    case '-' | '~' | '(' =>
+                        parseExpressionTerm(compiler, Nil, firstToken, None) match
+                            case Some(term : ExpressionTerm) => List(term)
+                            case _ => Nil
+                    case _ => List(sym)
+            case Some(token : Token) =>
+                compiler.nextToken() match
+                    case Some(symToken : SymbolToken) =>
+                        symToken.sym match
+                            case '.' | '(' | '[' =>
+                                parseExpressionTerm(compiler, Nil, firstToken, Some(symToken)) match
+                                    case Some(term : ExpressionTerm) => List(term)
+                                    case _ => Nil
+                            case _ =>
+                                parseExpressionTerm(compiler, Nil, firstToken, None) match
+                                    case Some(term : ExpressionTerm) => List(term, symToken)
+                                    case _ => Nil
+                    case _ => Nil
+            case _ =>
+                nextToken.head match
+                    case sym : SymbolToken =>
+                        sym.sym match
+                            case '(' =>
+                                parseExpressionTerm(compiler, Nil, Some(sym), None) match
+                                    case Some(term : ExpressionTerm) => List(term)
+                                    case _ => Nil
+                            case '[' =>
+                                parseExpression(compiler, Nil) match
+                                    case Some(expr : Expression) => List(sym, expr, SymbolToken(']'))
+                                    case _ => Nil
+                            // case '-' | '~' =>
+                            //     parseExpressionTerm(compiler, Nil, Some(sym), None) match
+                            //         case Some(term : ExpressionTerm) => List(term)
+                            //         case _ => Nil
+                            case _ => List(sym)
+                    case _ =>
+                        compiler.nextToken() match
+                            case Some(symToken : SymbolToken) =>
+                                symToken.sym match
+                                    case ')' | ']' | ';' | ',' =>
+                                        parseExpressionTerm(compiler, Nil, Some(nextToken.head), None) match
+                                            case Some(term : ExpressionTerm) => List(term, symToken)
+                                            case _ => Nil
+                                    case '(' | '[' | '.' =>
+                                        parseExpressionTerm(compiler, Nil, Some(nextToken.head), Some(symToken)) match
+                                            case Some(term : ExpressionTerm) => List(term)
+                                            case _ => Nil
+                                    case _ =>
+                                        parseExpressionTerm(compiler, Nil, Some(nextToken.head), None) match
+                                            case Some(term : ExpressionTerm) => List(term, symToken)
+                                            case _ => Nil
+                            case _ => Nil
+        if !nextChild.isEmpty then
+            if nextChild.last == SymbolToken(')') then
+                return Some(Expression(children ::: nextChild.dropRight(1), SymbolToken(')')))
+            else if nextChild.last == SymbolToken(']') then
+                return Some(Expression(children ::: nextChild.dropRight(1), SymbolToken(']')))
+            else if nextChild.last == SymbolToken(';') then
+                return Some(Expression(children ::: nextChild.dropRight(1), SymbolToken(';')))
+            else if nextChild.last == SymbolToken(',') then
+                return Some(Expression(children ::: nextChild.dropRight(1), SymbolToken(',')))
+        parseExpression(compiler, children ::: nextChild)
+
+    def parseExpressionTerm( compiler : Compiler, children : List[ProgramElement], firstToken : Option[Token], secondToken : Option[Token] ) : Option[ExpressionTerm] =
+        val nextChild = (firstToken, secondToken) match
+            case (Some(intToken : IntegerToken), _) => println("Parsing integer term " + intToken.int.toString); List(intToken)
+            case (Some(strToken : StringToken), _) => println("Parsing string term " + strToken.str); List(strToken)
+            case (Some(kwToken : KeywordToken), _) => println("Parsing keyword term " + kwToken.kw); List(kwToken)
+            case (Some(symToken : SymbolToken), _) =>
+                println("Parsing symbol term " + symToken.sym)
+                symToken.sym match
+                    case '(' =>
+                        secondToken match
+                            case Some(token : Token) =>
+                                parseExpression(compiler, Nil, secondToken) match
+                                    case Some(expr : Expression) => List(symToken, expr, SymbolToken(')'))
+                                    case _ => Nil
+                            case _ =>
+                                parseExpression(compiler, Nil, compiler.nextToken()) match
+                                    case Some(expr : Expression) => List(symToken, expr, SymbolToken(')'))
+                                    case _ => Nil
+                    case _ =>
+                        if !secondToken.isEmpty then
+                            parseExpressionTerm(compiler, Nil, secondToken, compiler.nextToken()) match
+                                case Some(term : ExpressionTerm) => List(symToken, term)
+                                case _ => Nil
+                        else
+                            parseExpressionTerm(compiler, Nil, compiler.nextToken(), None) match
+                                case Some(term : ExpressionTerm) => List(symToken, term)
+                                case _ => Nil
+            case (Some(idToken : IDToken), Some(symToken : SymbolToken)) =>
+                println("Parsing ID-symbol term pair " + idToken.id + ", " + symToken.sym)
+                symToken.sym match
+                    case '(' =>
+                        parseExpressionList(compiler, Nil) match
+                            case Some(exprs : ExpressionList) => List(idToken, symToken, exprs, SymbolToken(')'))
+                            case _ => Nil
+                    case '[' =>
+                        parseExpression(compiler, Nil) match
+                            case Some(expr : Expression) => List(idToken, symToken, expr, SymbolToken(']'))
+                            case _ => Nil
+                    case '.' =>
+                        compiler.nextToken() match
+                            case Some(nextIDToken : IDToken) =>
+                                compiler.nextToken() match
+                                    case Some(nextSymToken : SymbolToken) =>
+                                        nextSymToken.sym match
+                                            case '(' =>
+                                                parseExpressionList(compiler, Nil) match
+                                                    case Some(exprs : ExpressionList) => List(idToken, symToken, nextIDToken, nextSymToken, exprs, SymbolToken(')'))
+                                                    case _ => Nil
+                                            case _ => Nil
+                                    case _ => Nil
+                            case _ => Nil
+                    case _ => List(idToken)
+            case (Some(idToken : IDToken), _) => println("Parsing ID term " + idToken.id); List(idToken) 
+            case _ => Nil
+        Some(ExpressionTerm(nextChild))
 
     def parseExpressionList( compiler : Compiler, children : List[ProgramElement] ) : Option[ExpressionList] =
         val nextToken = compiler.nextToken() match
@@ -314,19 +458,21 @@ class Parser (val file : File):
         else if nextToken.head == SymbolToken(')') then
             return Some(ExpressionList(children))
         val nextChild = nextToken.head match
-            case id : IDToken =>
-                parseExpression(compiler, List(id)) match
-                    case Some(expr : Expression) => List(expr)
-                    case _ => Nil
-            case kw : KeywordToken =>
-                kw.kw match
-                    case "true" | "false" | "null" | "this" =>
-                        parseExpression(compiler, List(kw)) match
+            case sym : SymbolToken =>
+                sym.sym match
+                    case ',' => Nil
+                    case _ =>
+                        parseExpression(compiler, Nil, Some(sym)) match
                             case Some(expr : Expression) => List(expr)
                             case _ => Nil
-                    case _ => List(kw)
-            case child : ProgramElement => List(child)
-        parseExpressionList(compiler, children ::: nextChild)
+            case child : ProgramElement =>
+                parseExpression(compiler, Nil, Some(child)) match
+                    case Some(expr : Expression) => List(expr)
+                    case _ => Nil
+        if !nextChild.isEmpty then
+            if nextChild.last.lastSym == SymbolToken(')') then
+                return Some(ExpressionList(children ::: nextChild))
+        parseExpressionList(compiler, children ::: nextChild ::: List(SymbolToken(',')))
 
 object Parser {
 
