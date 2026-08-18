@@ -6,13 +6,38 @@ import java.io.PrintWriter
 import scala.io.Source
 import javax.net.ssl.TrustManager
 
+case class CodeSymbol( val name : String, val symType : String, val kind : String, val index : Int)
+
+class SymbolTable(val map : Map[String, CodeSymbol], val numStatic : Int = 0, val numField : Int = 0, val numArg : Int = 0, val numVar : Int = 0):
+
+    def addStaticSymbol( name : String, symType : String ) : SymbolTable =
+        val newMap = map + (name -> CodeSymbol(name, symType, "static", numStatic))
+        SymbolTable(newMap, numStatic+1, numField, numArg, numVar)
+
+    def addFieldSymbol( name : String, symType : String ) : SymbolTable =
+        val newMap = map + (name -> CodeSymbol(name, symType, "field", numField))
+        SymbolTable(newMap, numStatic, numField+1, numArg, numVar)
+
+    def addArgSymbol( name : String, symType : String ) : SymbolTable =
+        val newMap = map + (name -> CodeSymbol(name, symType, "argument", numArg))
+        SymbolTable(newMap, numStatic, numField, numArg+1, numVar)
+
+    def addVarSymbol( name : String, symType : String ) : SymbolTable =
+        val newMap = map + (name -> CodeSymbol(name, symType, "variable", numVar))
+        SymbolTable(newMap, numStatic, numField, numArg, numVar+1)
+
+class CodeGeneratorState( val classSymTable : SymbolTable, val subSymTable : SymbolTable, val lines : List[String])
+
 class ProgramElement( val children : List[ProgramElement], val xmlTagName : String ):
-    // def getXML : String
+
     def writeXML( writer : PrintWriter, indent : String = "" ) : Unit =
         writer.println(indent + "<" + xmlTagName + ">")
         for child <- children do
             child.writeXML(writer, indent + "  ")
         writer.println(indent + "</" + xmlTagName + ">")
+
+    def generateCode( state : CodeGeneratorState ) : CodeGeneratorState =
+        state
 
 case class ClassElement( override val children : List[ProgramElement] ) extends ProgramElement(children, "class")
 case class ClassVarDec( override val children : List[ProgramElement] ) extends ProgramElement(children, "classVarDec")
@@ -32,21 +57,26 @@ case class ExpressionList( override val children : List[ProgramElement] ) extend
 
 class Parser (val file : File):
 
-    def parse : Unit =
+    def parse : Iterator[Option[ClassElement]] =
         val srcFileIter = if file.isFile() then Iterator[File](file) else file.listFiles().iterator
-        for srcFile <- srcFileIter if srcFile.getName().endsWith(".jack") do
+        for srcFile <- srcFileIter if srcFile.getName().endsWith(".jack") yield
             println("Parsing file " + srcFile.getName())
             val compiler = Compiler(Source.fromFile(srcFile))
-            val xmlFilePath = srcFile.getPath().substring(0, srcFile.getPath().length()-5) + "_mine.xml"
+            val xmlFilePath = srcFile.getPath().substring(0, srcFile.getPath().length()-5) + "_syntax.xml"
             val xmlWriter = PrintWriter(xmlFilePath)
-            while compiler.hasNextToken() do
+            val classElement = if compiler.hasNextToken() then
                 compiler.nextToken() match
                     case Some(kw : KeywordToken) =>
                         parseClass(compiler, List(kw)) match
-                            case Some(newClass : ClassElement) => newClass.writeXML(xmlWriter)
-                            case _ =>
-                    case _ =>
+                            case Some(newClass : ClassElement) =>
+                                newClass.writeXML(xmlWriter)
+                                Some(newClass)
+                            case _ => None
+                    case _ => None
+                else
+                    None
             xmlWriter.close()
+            classElement
 
     def parseClass( compiler : Compiler, children : List[ProgramElement] ) : Option[ClassElement] =
         val nextToken = compiler.nextToken() match
@@ -395,11 +425,11 @@ class Parser (val file : File):
 
     def parseExpressionTerm( compiler : Compiler, children : List[ProgramElement], firstToken : Option[Token], secondToken : Option[Token] ) : Option[ExpressionTerm] =
         val nextChild = (firstToken, secondToken) match
-            case (Some(intToken : IntegerToken), _) => println("Parsing integer term " + intToken.int.toString); List(intToken)
-            case (Some(strToken : StringToken), _) => println("Parsing string term " + strToken.str); List(strToken)
-            case (Some(kwToken : KeywordToken), _) => println("Parsing keyword term " + kwToken.kw); List(kwToken)
+            case (Some(intToken : IntegerToken), _) => /* println("Parsing integer term " + intToken.int.toString); */ List(intToken)
+            case (Some(strToken : StringToken), _) => /* println("Parsing string term " + strToken.str); */ List(strToken)
+            case (Some(kwToken : KeywordToken), _) => /* println("Parsing keyword term " + kwToken.kw); */ List(kwToken)
             case (Some(symToken : SymbolToken), _) =>
-                println("Parsing symbol term " + symToken.sym)
+                // println("Parsing symbol term " + symToken.sym)
                 symToken.sym match
                     case '(' =>
                         secondToken match
@@ -421,7 +451,7 @@ class Parser (val file : File):
                                 case Some(term : ExpressionTerm) => List(symToken, term)
                                 case _ => Nil
             case (Some(idToken : IDToken), Some(symToken : SymbolToken)) =>
-                println("Parsing ID-symbol term pair " + idToken.id + ", " + symToken.sym)
+                // println("Parsing ID-symbol term pair " + idToken.id + ", " + symToken.sym)
                 symToken.sym match
                     case '(' =>
                         parseExpressionList(compiler, Nil) match
@@ -445,7 +475,7 @@ class Parser (val file : File):
                                     case _ => Nil
                             case _ => Nil
                     case _ => List(idToken)
-            case (Some(idToken : IDToken), _) => println("Parsing ID term " + idToken.id); List(idToken) 
+            case (Some(idToken : IDToken), _) => /* println("Parsing ID term " + idToken.id); */ List(idToken) 
             case _ => Nil
         Some(ExpressionTerm(nextChild))
 

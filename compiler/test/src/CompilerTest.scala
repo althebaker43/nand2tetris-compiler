@@ -1,8 +1,28 @@
 package compiler
 
 import scala.io.Source
+import java.io.File
+import java.nio.file.{Path, Files, SimpleFileVisitor, FileVisitResult, StandardCopyOption, FileAlreadyExistsException}
+import java.nio.file.attribute.BasicFileAttributes
+import java.util.function.Consumer
+import scala.compiletime.ops.double
+
+class ResourceCopier( val destDirPath : Path ) extends Consumer[Path]:
+    def accept( srcFilePath : Path ) : Unit =
+        val destFilePath = Path.of(destDirPath.toString(), srcFilePath.getFileName().toString())
+        Files.copy(srcFilePath, destFilePath, StandardCopyOption.REPLACE_EXISTING)
 
 class CompilerSuite extends munit.FunSuite {
+
+    def getTestDir( name : String ) : File =
+        val srcPath = Path.of(getClass.getResource("/" + name + "/").toURI())
+        val destPath = Path.of("test_run_dir", name)
+        try
+            Files.createDirectories(destPath)
+        catch
+            case ex : FileAlreadyExistsException =>
+        Files.list(srcPath).forEach(ResourceCopier(destPath))
+        File(destPath.toUri())
 
     val listing = """
 // This file is part of www.nand2tetris.org
@@ -37,9 +57,7 @@ class Main {
 
     test("charIter") {
 
-        val charIter = Source.fromString(listing)
-        assertEquals('\n', charIter.next())
-        assertEquals('\n', charIter.ch)
+        val charIter = Source.fromURL(getClass.getResource("/Square/Main.jack"))
         assertEquals('/', charIter.next())
         assertEquals('/', charIter.ch)
         assertEquals('/', charIter.next())
@@ -53,7 +71,7 @@ class Main {
 
     test("tokenIter") {
 
-        val compiler = new Compiler(Source.fromString(listing))
+        val compiler = new Compiler(Source.fromURL(getClass.getResource("/Square/Main.jack")))
 
         val classToken = compiler.nextToken()
         assert(!classToken.isEmpty)
@@ -66,5 +84,42 @@ class Main {
         val classOpenBraceToken = compiler.nextToken()
         assert(!classOpenBraceToken.isEmpty)
         assertEquals(classOpenBraceToken.get, SymbolToken('{'))
+    }
+
+    test("sevenCodeGen") {
+        val parser = Parser(getTestDir("Seven"))
+        for classElementOpt <- parser.parse do
+            classElementOpt match
+                case Some(classElement : ClassElement) =>
+                    val classSymTable = SymbolTable(Map[String, CodeSymbol]())
+                    val subSymTable = SymbolTable(Map[String, CodeSymbol]())
+                    val codeLines = classElement.generateCode(CodeGeneratorState(classSymTable, subSymTable, List[String]())).lines
+                    // assert(codeLines.length > 0)
+                case _ => fail("Failed to parse class")
+    }
+
+    test("averageCodeGen") {
+        val parser = Parser(getTestDir("Average"))
+        parser.parse
+    }
+
+    test("complexArraysCodeGen") {
+        val parser = Parser(getTestDir("ComplexArrays"))
+        parser.parse
+    }
+
+    test("convertToBinCodeGen") {
+        val parser = Parser(getTestDir("ConvertToBin"))
+        parser.parse
+    }
+
+    test("pongCodeGen") {
+        val parser = Parser(getTestDir("Pong"))
+        parser.parse
+    }
+
+    test("squareCodeGen") {
+        val parser = Parser(getTestDir("Square"))
+        parser.parse
     }
 }

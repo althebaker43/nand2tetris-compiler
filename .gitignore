@@ -3,3 +3,4 @@
 .vscode/
 out/
 .mill-version
+test_run_dir/
