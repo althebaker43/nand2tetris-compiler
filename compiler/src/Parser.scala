@@ -6,55 +6,6 @@ import java.io.PrintWriter
 import scala.io.Source
 import javax.net.ssl.TrustManager
 
-case class CodeSymbol( val name : String, val symType : String, val kind : String, val index : Int)
-
-class SymbolTable(val map : Map[String, CodeSymbol], val numStatic : Int = 0, val numField : Int = 0, val numArg : Int = 0, val numVar : Int = 0):
-
-    def addStaticSymbol( name : String, symType : String ) : SymbolTable =
-        val newMap = map + (name -> CodeSymbol(name, symType, "static", numStatic))
-        SymbolTable(newMap, numStatic+1, numField, numArg, numVar)
-
-    def addFieldSymbol( name : String, symType : String ) : SymbolTable =
-        val newMap = map + (name -> CodeSymbol(name, symType, "field", numField))
-        SymbolTable(newMap, numStatic, numField+1, numArg, numVar)
-
-    def addArgSymbol( name : String, symType : String ) : SymbolTable =
-        val newMap = map + (name -> CodeSymbol(name, symType, "argument", numArg))
-        SymbolTable(newMap, numStatic, numField, numArg+1, numVar)
-
-    def addVarSymbol( name : String, symType : String ) : SymbolTable =
-        val newMap = map + (name -> CodeSymbol(name, symType, "variable", numVar))
-        SymbolTable(newMap, numStatic, numField, numArg, numVar+1)
-
-class CodeGeneratorState( val classSymTable : SymbolTable, val subSymTable : SymbolTable, val lines : List[String])
-
-class ProgramElement( val children : List[ProgramElement], val xmlTagName : String ):
-
-    def writeXML( writer : PrintWriter, indent : String = "" ) : Unit =
-        writer.println(indent + "<" + xmlTagName + ">")
-        for child <- children do
-            child.writeXML(writer, indent + "  ")
-        writer.println(indent + "</" + xmlTagName + ">")
-
-    def generateCode( state : CodeGeneratorState ) : CodeGeneratorState =
-        state
-
-case class ClassElement( override val children : List[ProgramElement] ) extends ProgramElement(children, "class")
-case class ClassVarDec( override val children : List[ProgramElement] ) extends ProgramElement(children, "classVarDec")
-case class SubroutineDec( override val children : List[ProgramElement] ) extends ProgramElement(children, "subroutineDec")
-case class ParameterList( override val children : List[ProgramElement] ) extends ProgramElement(children, "parameterList")
-case class SubroutineBody( override val children : List[ProgramElement] ) extends ProgramElement(children, "subroutineBody")
-case class VarDec( override val children : List[ProgramElement] ) extends ProgramElement(children, "varDec")
-case class StatementList( override val children : List[ProgramElement] ) extends ProgramElement(children, "statements")
-case class LetStatement( override val children : List[ProgramElement] ) extends ProgramElement(children, "letStatement")
-case class IfStatement( override val children : List[ProgramElement] ) extends ProgramElement(children, "ifStatement")
-case class WhileStatement( override val children : List[ProgramElement] ) extends ProgramElement(children, "whileStatement")
-case class DoStatement( override val children : List[ProgramElement] ) extends ProgramElement(children, "doStatement")
-case class ReturnStatement( override val children : List[ProgramElement] ) extends ProgramElement(children, "returnStatement")
-case class Expression( override val children : List[ProgramElement], lastSym : SymbolToken ) extends ProgramElement(children, "expression")
-case class ExpressionTerm( override val children : List[ProgramElement] ) extends ProgramElement(children, "term")
-case class ExpressionList( override val children : List[ProgramElement] ) extends ProgramElement(children, "expressionList")
-
 class Parser (val file : File):
 
     def parse : Iterator[Option[ClassElement]] =

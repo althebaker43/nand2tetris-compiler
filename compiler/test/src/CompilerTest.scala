@@ -6,6 +6,7 @@ import java.nio.file.{Path, Files, SimpleFileVisitor, FileVisitResult, StandardC
 import java.nio.file.attribute.BasicFileAttributes
 import java.util.function.Consumer
 import scala.compiletime.ops.double
+import java.io.PrintWriter
 
 class ResourceCopier( val destDirPath : Path ) extends Consumer[Path]:
     def accept( srcFilePath : Path ) : Unit =
@@ -87,20 +88,40 @@ class Main {
     }
 
     test("sevenCodeGen") {
-        val parser = Parser(getTestDir("Seven"))
+        val testDir = getTestDir("Seven")
+        val parser = Parser(testDir)
         for classElementOpt <- parser.parse do
             classElementOpt match
                 case Some(classElement : ClassElement) =>
                     val classSymTable = SymbolTable(Map[String, CodeSymbol]())
                     val subSymTable = SymbolTable(Map[String, CodeSymbol]())
-                    val codeLines = classElement.generateCode(CodeGeneratorState(classSymTable, subSymTable, List[String]())).lines
-                    // assert(codeLines.length > 0)
+                    for child <- classElement.children do
+                        child match
+                            case IDToken(id) =>
+                                val codeLines = classElement.generateCode(CodeGeneratorState(id, classSymTable, subSymTable, List[String]())).lines
+                                val vmFile = File(testDir.getPath + "/" + id + ".vm")
+                                val vmWriter = PrintWriter(vmFile)
+                                codeLines.foreach(vmWriter.println(_))
+                                vmWriter.close()
+                                assert(codeLines.length > 0)
+                            case _ =>
                 case _ => fail("Failed to parse class")
     }
 
     test("averageCodeGen") {
         val parser = Parser(getTestDir("Average"))
-        parser.parse
+        for classElementOpt <- parser.parse do
+            classElementOpt match
+                case Some(classElement : ClassElement) =>
+                    val classSymTable = SymbolTable(Map[String, CodeSymbol]())
+                    val subSymTable = SymbolTable(Map[String, CodeSymbol]())
+                    for child <- classElement.children do
+                        child match
+                            case IDToken(id) =>
+                                val codeLines = classElement.generateCode(CodeGeneratorState(id, classSymTable, subSymTable, List[String]())).lines
+                                // assert(codeLines.length > 0)
+                            case _ =>
+                case _ => fail("Failed to parse class")
     }
 
     test("complexArraysCodeGen") {
