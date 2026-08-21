@@ -6,6 +6,30 @@ import java.io.PrintWriter
 import scala.io.Source
 import javax.net.ssl.TrustManager
 
+object Parser {
+
+    def main(args : Array[String]) : Unit = {
+        val inputFile = File(args(0))
+        val parser = Parser(inputFile)
+        val outputPath = if inputFile.isFile() then inputFile.getParent() else inputFile.getPath()
+        parser.generateCode(outputPath)
+    }
+
+    def writeCodeLines(lines: List[String], outputPath: String): Unit = {
+        val vmFile = File(outputPath)
+        val vmWriter = PrintWriter(vmFile)
+        lines.foreach(Parser.writeCodeLine(_, vmWriter))
+        vmWriter.close()
+    }
+
+    def writeCodeLine(line: String, writer: PrintWriter): Unit = {
+        if line.startsWith("function") then
+            writer.println("\n" + line)
+        else
+            writer.println("  " + line)
+    }
+}
+
 class Parser (val file : File):
 
     def parse : Iterator[Option[ClassElement]] =
@@ -39,10 +63,7 @@ class Parser (val file : File):
                         child match
                             case IDToken(id) =>
                                 val codeLines = classElement.generateCode(CodeGeneratorState(id, classSymTable, subSymTable, List[String]())).lines
-                                val vmFile = File(outputPath + "/" + id + ".vm")
-                                val vmWriter = PrintWriter(vmFile)
-                                codeLines.foreach(vmWriter.println(_))
-                                vmWriter.close()
+                                Parser.writeCodeLines(codeLines, outputPath + "/" + id + ".vm")
                             case _ =>
                 case _ =>
 
@@ -471,13 +492,3 @@ class Parser (val file : File):
             if nextChild.last.lastSym == SymbolToken(')') then
                 return Some(ExpressionList(children ::: nextChild))
         parseExpressionList(compiler, children ::: nextChild ::: List(SymbolToken(',')))
-
-object Parser {
-
-    def main(args : Array[String]) : Unit = {
-        val inputFile = File(args(0))
-        val parser = Parser(inputFile)
-        val outputPath = if inputFile.isFile() then inputFile.getParent() else inputFile.getPath()
-        parser.generateCode(outputPath)
-    }
-}

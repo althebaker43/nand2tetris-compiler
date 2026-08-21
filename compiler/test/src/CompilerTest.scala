@@ -87,6 +87,18 @@ class Main {
         assertEquals(classOpenBraceToken.get, SymbolToken('{'))
     }
 
+    def forEachClassCode(testDir: File, processClassCode: (List[String]) => Unit): Unit =
+        val parser = Parser(testDir)
+        for classElementOpt <- parser.parse do
+            classElementOpt match
+                case Some(classElement : ClassElement) =>
+                    val classSymTable = SymbolTable(Map[String, CodeSymbol]())
+                    val subSymTable = SymbolTable(Map[String, CodeSymbol]())
+                    val codeLines = classElement.generateCode(CodeGeneratorState(classElement.getClassName, classSymTable, subSymTable, List[String]())).lines
+                    Parser.writeCodeLines(codeLines, testDir.getPath() + "/" + classElement.getClassName + ".vm")
+                    processClassCode(codeLines)
+                case _ => fail("Failed to parse class")
+
     test("sevenCodeGen") {
         val expectedCmds = List(
             "function Main.main 0",
@@ -100,60 +112,26 @@ class Main {
             "push constant 0",
             "return",
         )
-        val testDir = getTestDir("Seven")
-        val parser = Parser(testDir)
-        for classElementOpt <- parser.parse do
-            classElementOpt match
-                case Some(classElement : ClassElement) =>
-                    val classSymTable = SymbolTable(Map[String, CodeSymbol]())
-                    val subSymTable = SymbolTable(Map[String, CodeSymbol]())
-                    for child <- classElement.children do
-                        child match
-                            case IDToken(id) =>
-                                val codeLines = classElement.generateCode(CodeGeneratorState(id, classSymTable, subSymTable, List[String]())).lines
-                                val vmFile = File(testDir.getPath + "/" + id + ".vm")
-                                val vmWriter = PrintWriter(vmFile)
-                                codeLines.foreach(vmWriter.println(_))
-                                vmWriter.close()
-                                assert(codeLines.length > 0)
-                                assertEquals(codeLines, expectedCmds, "Unexpected commands")
-                            case _ =>
-                case _ => fail("Failed to parse class")
+        forEachClassCode(getTestDir("Seven"), lines => assertEquals(lines, expectedCmds, "Unexpected commands"))
     }
 
     test("averageCodeGen") {
-        val parser = Parser(getTestDir("Average"))
-        for classElementOpt <- parser.parse do
-            classElementOpt match
-                case Some(classElement : ClassElement) =>
-                    val classSymTable = SymbolTable(Map[String, CodeSymbol]())
-                    val subSymTable = SymbolTable(Map[String, CodeSymbol]())
-                    for child <- classElement.children do
-                        child match
-                            case IDToken(id) =>
-                                val codeLines = classElement.generateCode(CodeGeneratorState(id, classSymTable, subSymTable, List[String]())).lines
-                                // assert(codeLines.length > 0)
-                            case _ =>
-                case _ => fail("Failed to parse class")
+        forEachClassCode(getTestDir("Average"), lines => assert(lines.length > 0))
     }
 
     test("complexArraysCodeGen") {
-        val parser = Parser(getTestDir("ComplexArrays"))
-        parser.parse
+        forEachClassCode(getTestDir("ComplexArrays"), lines => assert(lines.length > 0))
     }
 
     test("convertToBinCodeGen") {
-        val parser = Parser(getTestDir("ConvertToBin"))
-        parser.parse
+        forEachClassCode(getTestDir("ConvertToBin"), lines => assert(lines.length > 0))
     }
 
     test("pongCodeGen") {
-        val parser = Parser(getTestDir("Pong"))
-        parser.parse
+        forEachClassCode(getTestDir("Pong"), lines => assert(lines.length > 0))
     }
 
     test("squareCodeGen") {
-        val parser = Parser(getTestDir("Square"))
-        parser.parse
+        forEachClassCode(getTestDir("Square"), lines => assert(lines.length > 0))
     }
 }

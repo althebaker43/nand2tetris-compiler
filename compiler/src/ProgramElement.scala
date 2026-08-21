@@ -48,6 +48,17 @@ case class ClassElement( override val children : List[ProgramElement] ) extends 
 
     override def generateCode(state: CodeGeneratorState): CodeGeneratorState = generateChildCode(state, children)
 
+    def getClassName = getIDNames(children).head
+
+    def getIDNames(remainingChildren: List[ProgramElement], ids: List[String] = Nil): List[String] =
+        if remainingChildren.isEmpty then
+            return ids
+        else
+            val newIDs = remainingChildren.head match
+                case IDToken(id) => List(id)
+                case _ => Nil
+            getIDNames(remainingChildren.tail, ids ++ newIDs)
+
 case class ClassVarDec( override val children : List[ProgramElement] ) extends ProgramElement(children, "classVarDec")
 
 case class SubroutineDec( override val children : List[ProgramElement] ) extends ProgramElement(children, "subroutineDec"):
