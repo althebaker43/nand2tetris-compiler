@@ -29,6 +29,23 @@ class Parser (val file : File):
             xmlWriter.close()
             classElement
 
+    def generateCode( outputPath : String ) : Unit =
+        for classElementOpt <- parse do
+            classElementOpt match
+                case Some(classElement : ClassElement) =>
+                    val classSymTable = SymbolTable(Map[String, CodeSymbol]())
+                    val subSymTable = SymbolTable(Map[String, CodeSymbol]())
+                    for child <- classElement.children do
+                        child match
+                            case IDToken(id) =>
+                                val codeLines = classElement.generateCode(CodeGeneratorState(id, classSymTable, subSymTable, List[String]())).lines
+                                val vmFile = File(outputPath + "/" + id + ".vm")
+                                val vmWriter = PrintWriter(vmFile)
+                                codeLines.foreach(vmWriter.println(_))
+                                vmWriter.close()
+                            case _ =>
+                case _ =>
+
     def parseClass( compiler : Compiler, children : List[ProgramElement] ) : Option[ClassElement] =
         val nextToken = compiler.nextToken() match
             case Some(token : Token) => List(token)
@@ -458,7 +475,9 @@ class Parser (val file : File):
 object Parser {
 
     def main(args : Array[String]) : Unit = {
-        val parser = Parser(File(args(0)))
-        parser.parse
+        val inputFile = File(args(0))
+        val parser = Parser(inputFile)
+        val outputPath = if inputFile.isFile() then inputFile.getParent() else inputFile.getPath()
+        parser.generateCode(outputPath)
     }
 }

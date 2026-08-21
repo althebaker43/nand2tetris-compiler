@@ -88,6 +88,18 @@ class Main {
     }
 
     test("sevenCodeGen") {
+        val expectedCmds = List(
+            "function Main.main 0",
+            "push constant 1",
+            "push constant 2",
+            "push constant 3",
+            "call Math.multiply 2",
+            "add",
+            "call Output.printInt 1",
+            "pop temp 0",
+            "push constant 0",
+            "return",
+        )
         val testDir = getTestDir("Seven")
         val parser = Parser(testDir)
         for classElementOpt <- parser.parse do
@@ -104,6 +116,7 @@ class Main {
                                 codeLines.foreach(vmWriter.println(_))
                                 vmWriter.close()
                                 assert(codeLines.length > 0)
+                                assertEquals(codeLines, expectedCmds, "Unexpected commands")
                             case _ =>
                 case _ => fail("Failed to parse class")
     }

@@ -94,6 +94,8 @@ case class ParameterList( override val children : List[ProgramElement] ) extends
 
 case class SubroutineBody( override val children : List[ProgramElement] ) extends ProgramElement(children, "subroutineBody"):
 
+    override def generateCode(state: CodeGeneratorState): CodeGeneratorState = generateChildCode(state, children)
+
     override def getNumVars( remainingChildren : List[ProgramElement], numVars : Int = 0 ) : Int =
         if remainingChildren.isEmpty then
             numVars
@@ -133,8 +135,55 @@ case class WhileStatement( override val children : List[ProgramElement] ) extend
 case class DoStatement( override val children : List[ProgramElement] ) extends ProgramElement(children, "doStatement"):
 
     override def generateCode(state: CodeGeneratorState): CodeGeneratorState =
-        val childState = generateChildCode(state, children)
-        CodeGeneratorState(state.className, state.classSymTable, state.subSymTable, state.lines ++ List("pop temp 0"))
+        val ids = getIdentifiers(children)
+        val pushCmds = if ids.length == 2 then
+            val objName = ids.head
+            val methodName = ids.drop(1).head
+            if state.classSymTable.map.contains(objName) then
+                val objSym = state.classSymTable.map(objName)
+                List("push " + objSym.kind + " " + objSym.index.toString())
+            else if state.subSymTable.map.contains(objName) then
+                val objSym = state.subSymTable.map(objName)
+                List("push " + objSym.kind + " " + objSym.index.toString())
+            else
+                Nil
+        else
+            List("push pointer 0")
+        val doState = CodeGeneratorState(state.className, state.classSymTable, state.subSymTable, state.lines ++ pushCmds)
+        val childState = generateChildCode(doState, children)
+        val numArgs = getNumArgs(children)
+        val callCmds = if ids.length == 2 then
+            val objName = ids.head
+            val methodName = ids.drop(1).head
+            if state.classSymTable.map.contains(objName) then
+                val objSym = state.classSymTable.map(objName)
+                List("call " + objSym.symType + "." + methodName + " " + (numArgs+1).toString())
+            else if state.subSymTable.map.contains(objName) then
+                val objSym = state.subSymTable.map(objName)
+                List("call " + objSym.symType + "." + methodName + " " + (numArgs+1).toString())
+            else
+                List("call " + objName + "." + methodName + " " + numArgs.toString())
+        else
+            List("call " + state.className + "." + ids.head + " " + (numArgs+1).toString())
+        CodeGeneratorState(state.className, state.classSymTable, state.subSymTable, childState.lines ++ callCmds ++ List("pop temp 0"))
+
+    def getIdentifiers(remainingChildren: List[ProgramElement], ids: List[String] = Nil): List[String] =
+        if remainingChildren.isEmpty then
+            return ids
+        else
+            val newIDs = remainingChildren.head match
+                case IDToken(id) => List(id)
+                case _ => Nil
+            getIdentifiers(remainingChildren.tail, ids ++ newIDs)
+
+    def getNumArgs(remainingChildren: List[ProgramElement], numArgs: Int = 0): Int =
+        if remainingChildren.isEmpty then
+            return numArgs
+        else
+            val numNewArgs = remainingChildren.head match
+                case ExpressionList(exprs) => exprs.length
+                case _ => 0
+            getNumArgs(remainingChildren.tail, numArgs + numNewArgs)
 
 case class ReturnStatement( override val children : List[ProgramElement] ) extends ProgramElement(children, "returnStatement"):
 
@@ -164,13 +213,35 @@ case class Expression( override val children : List[ProgramElement], lastSym : S
                 case SymbolToken('<') => List("lt")
                 case SymbolToken('>') => List("gt")
                 case SymbolToken('=') => List("eq")
-                case SymbolToken('*') => List("call Math.multiply")
-                case SymbolToken('/') => List("call Math.divide")
+                case SymbolToken('*') => List("call Math.multiply 2")
+                case SymbolToken('/') => List("call Math.divide 2")
                 case _ => Nil
-            CodeGeneratorState(state.className, state.classSymTable, state.subSymTable, state.lines ++ opCmds)
+            if opCmds.isEmpty then
+                generateOperatorCode(state, remainingChildren.tail)
+            else
+                CodeGeneratorState(state.className, state.classSymTable, state.subSymTable, state.lines ++ opCmds)
             
-case class ExpressionTerm( override val children : List[ProgramElement] ) extends ProgramElement(children, "term")
+case class ExpressionTerm( override val children : List[ProgramElement] ) extends ProgramElement(children, "term"):
 
+    override def generateCode(state: CodeGeneratorState): CodeGeneratorState =
+        if children.length == 1 then
+            children.head match
+                case IDToken(id) =>
+                    if state.subSymTable.map.contains(id) then
+                        val termSym = state.subSymTable.map(id)
+                        val pushCmds = List("push " + termSym.kind + " " + termSym.index.toString())
+                        CodeGeneratorState(state.className, state.classSymTable, state.subSymTable, state.lines ++ pushCmds)
+                    else
+                        val childState = generateChildCode(state, children)
+                        val callCmds = List("call " + id)
+                        CodeGeneratorState(state.className, state.classSymTable, state.subSymTable, childState.lines ++ callCmds)
+                case IntegerToken(int) =>
+                    val pushCmds = List("push constant " + int.toString())
+                    CodeGeneratorState(state.className, state.classSymTable, state.subSymTable, state.lines ++ pushCmds)
+                case _ => state
+        else
+            generateChildCode(state, children)
+ 
 case class ExpressionList( override val children : List[ProgramElement] ) extends ProgramElement(children, "expressionList"):
 
     override def generateCode(state: CodeGeneratorState): CodeGeneratorState = generateChildCode(state, children)
