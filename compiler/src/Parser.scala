@@ -25,6 +25,8 @@ object Parser {
     def writeCodeLine(line: String, writer: PrintWriter): Unit = {
         if line.startsWith("function") then
             writer.println("\n" + line)
+        else if line.startsWith("label") then
+            writer.println(line)
         else
             writer.println("  " + line)
     }
