@@ -87,14 +87,14 @@ class Main {
         assertEquals(classOpenBraceToken.get, SymbolToken('{'))
     }
 
-    def forEachClassCode(testDir: File, processClassCode: (List[String]) => Unit): Unit =
+    def forEachClassCode(testDir: File, debug: Boolean, processClassCode: (List[String]) => Unit): Unit =
         val parser = Parser(testDir)
         for classElementOpt <- parser.parse do
             classElementOpt match
                 case Some(classElement : ClassElement) =>
                     val classSymTable = SymbolTable(Map[String, CodeSymbol]())
                     val subSymTable = SymbolTable(Map[String, CodeSymbol]())
-                    val codeLines = classElement.generateCode(CodeGeneratorState(classElement.getClassName, classSymTable, subSymTable, List[String]())).lines
+                    val codeLines = classElement.generateCode(CodeGeneratorState(classElement.getClassName, classSymTable, subSymTable, List[String](), debug)).lines
                     Parser.writeCodeLines(codeLines, testDir.getPath() + "/" + classElement.getClassName + ".vm")
                     processClassCode(codeLines)
                 case _ => fail("Failed to parse class")
@@ -112,26 +112,26 @@ class Main {
             "push constant 0",
             "return",
         )
-        forEachClassCode(getTestDir("Seven"), lines => assertEquals(lines, expectedCmds, "Unexpected commands"))
+        forEachClassCode(getTestDir("Seven"), false, lines => assertEquals(lines, expectedCmds, "Unexpected commands"))
     }
 
     test("averageCodeGen") {
-        forEachClassCode(getTestDir("Average"), lines => assert(lines.length > 0))
+        forEachClassCode(getTestDir("Average"), false, lines => assert(lines.length > 0))
     }
 
     test("complexArraysCodeGen") {
-        forEachClassCode(getTestDir("ComplexArrays"), lines => assert(lines.length > 0))
+        forEachClassCode(getTestDir("ComplexArrays"), false, lines => assert(lines.length > 0))
     }
 
     test("convertToBinCodeGen") {
-        forEachClassCode(getTestDir("ConvertToBin"), lines => assert(lines.length > 0))
+        forEachClassCode(getTestDir("ConvertToBin"), false, lines => assert(lines.length > 0))
     }
 
     test("pongCodeGen") {
-        forEachClassCode(getTestDir("Pong"), lines => assert(lines.length > 0))
+        forEachClassCode(getTestDir("Pong"), false, lines => assert(lines.length > 0))
     }
 
     test("squareCodeGen") {
-        forEachClassCode(getTestDir("Square"), lines => assert(lines.length > 0))
+        forEachClassCode(getTestDir("Square"), false, lines => assert(lines.length > 0))
     }
 }

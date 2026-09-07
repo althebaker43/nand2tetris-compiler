@@ -23,7 +23,7 @@ case class SymbolTable(val map : Map[String, CodeSymbol], val numStatic : Int = 
         val newMap = map + (name -> CodeSymbol(name, symType, "local", numVar))
         SymbolTable(newMap, numStatic, numField, numArg, numVar+1)
 
-case class CodeGeneratorState( val className : String, val classSymTable : SymbolTable, val subSymTable : SymbolTable, val lines : List[String])
+case class CodeGeneratorState( val className : String, val classSymTable : SymbolTable, val subSymTable : SymbolTable, val lines : List[String], val debug : Boolean)
 
 class ProgramElement( val children : List[ProgramElement], val xmlTagName : String ):
 
@@ -86,6 +86,7 @@ case class ClassVarDec( override val children : List[ProgramElement] ) extends P
             state
         else
             val newState = if isField then
+                if state.debug then println("Adding field symbol " + varNames.head + " of type " + typeName)
                 state.copy(classSymTable = state.classSymTable.addFieldSymbol(varNames.head, typeName))
             else
                 state.copy(classSymTable = state.classSymTable.addStaticSymbol(varNames.head, typeName))
@@ -105,7 +106,7 @@ case class SubroutineDec( override val children : List[ProgramElement] ) extends
             case _ => false
         val numVars = children.map(child => child.getNumVars(child.children)).reduce(_ + _)
         val subSymTable = if isMethod then
-            SymbolTable(Map("this" -> CodeSymbol("this", state.className, "var", 0)), numVar=1)
+            SymbolTable(Map("this" -> CodeSymbol("this", state.className, "argument", 0)), numArg = 1)
         else
             SymbolTable(Map[String, CodeSymbol]())
         // Drop the sub kind (method or function) and return type to get the name
@@ -113,12 +114,13 @@ case class SubroutineDec( override val children : List[ProgramElement] ) extends
             case IDToken(id) =>
                 val funcCmds = List("function " + state.className + "." + id + " " + numVars.toString())
                 val thisCmds = if isConstructor then
-                    List("call Memory.alloc " + state.classSymTable.map.values.count(_.kind == "field").toString(), "pop pointer 0")
+                    val numFields = state.classSymTable.map.values.count(_.kind == "this")
+                    List("push constant " + numFields.toString(), "call Memory.alloc 1", "pop pointer 0")
                 else if isMethod then
                     List("push argument 0", "pop pointer 0")
                 else
                     Nil
-                val childState = generateChildCode(CodeGeneratorState(state.className, state.classSymTable, subSymTable, state.lines ++ funcCmds ++ thisCmds), children)
+                val childState = generateChildCode(state.copy(subSymTable = subSymTable, lines = state.lines ++ funcCmds ++ thisCmds), children)
                 state.copy(subSymTable = subSymTable, lines = childState.lines)
             case _ => state
 
@@ -171,7 +173,7 @@ case class VarDec( override val children : List[ProgramElement] ) extends Progra
         else
             remainingChildren.head match
                 case IDToken(id) =>
-                    val newState = CodeGeneratorState(state.className, state.classSymTable, state.subSymTable.addVarSymbol(id, varType), state.lines)
+                    val newState = state.copy(subSymTable = state.subSymTable.addVarSymbol(id, varType))
                     addVarSymbols(newState, varType, remainingChildren.tail)
                 case _ => addVarSymbols(state, varType, remainingChildren.tail)
 
@@ -243,7 +245,7 @@ case class DoStatement( override val children : List[ProgramElement] ) extends P
                 Nil
         else
             List("push pointer 0")
-        val doState = CodeGeneratorState(state.className, state.classSymTable, state.subSymTable, state.lines ++ pushCmds)
+        val doState = state.copy(lines = state.lines ++ pushCmds)
         val childState = generateChildCode(doState, children)
         val numArgs = getNumArgs(children)
         val callCmds = if ids.length == 2 then
@@ -259,7 +261,7 @@ case class DoStatement( override val children : List[ProgramElement] ) extends P
                 List("call " + objName + "." + methodName + " " + numArgs.toString())
         else
             List("call " + state.className + "." + ids.head + " " + (numArgs+1).toString())
-        CodeGeneratorState(state.className, state.classSymTable, state.subSymTable, childState.lines ++ callCmds ++ List("pop temp 0"))
+        state.copy(lines = childState.lines ++ callCmds ++ List("pop temp 0"))
 
     def getIdentifiers(remainingChildren: List[ProgramElement], ids: List[String] = Nil): List[String] =
         if remainingChildren.isEmpty then
@@ -284,7 +286,7 @@ case class ReturnStatement( override val children : List[ProgramElement] ) exten
     override def generateCode(state: CodeGeneratorState): CodeGeneratorState =
         val childState = generateChildCode(state, children)
         val voidCmds = if children.length == 2 then List("push constant 0") else Nil
-        CodeGeneratorState(state.className, state.classSymTable, state.subSymTable, childState.lines ++ voidCmds ++ List("return"))
+        state.copy(lines = childState.lines ++ voidCmds ++ List("return"))
 
 case class Expression( override val children : List[ProgramElement], lastSym : SymbolToken ) extends ProgramElement(children, "expression"):
 
@@ -341,6 +343,9 @@ case class ExpressionTerm( override val children : List[ProgramElement] ) extend
                     state.copy(lines = state.lines ++ pushCmds)
                 case KeywordToken("false") | KeywordToken("null")=>
                     val pushCmds = List("push constant 0")
+                    state.copy(lines = state.lines ++ pushCmds)
+                case KeywordToken("this") =>
+                    val pushCmds = List("push pointer 0")
                     state.copy(lines = state.lines ++ pushCmds)
                 case _ => state
         else if children.length == 2 then

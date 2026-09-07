@@ -64,7 +64,7 @@ class Parser (val file : File):
                     for child <- classElement.children do
                         child match
                             case IDToken(id) =>
-                                val codeLines = classElement.generateCode(CodeGeneratorState(id, classSymTable, subSymTable, List[String]())).lines
+                                val codeLines = classElement.generateCode(CodeGeneratorState(id, classSymTable, subSymTable, List[String](), false)).lines
                                 Parser.writeCodeLines(codeLines, outputPath + "/" + id + ".vm")
                             case _ =>
                 case _ =>
