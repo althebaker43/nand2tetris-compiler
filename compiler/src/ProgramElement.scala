@@ -347,6 +347,10 @@ case class ExpressionTerm( override val children : List[ProgramElement] ) extend
                 case KeywordToken("this") =>
                     val pushCmds = List("push pointer 0")
                     state.copy(lines = state.lines ++ pushCmds)
+                case StringToken(str) =>
+                    val strCmds = List("push constant " + str.length().toString(), "call String.new 1")
+                    val appendCmds: List[String] = str.map((char) => List("push constant " + char.toInt.toString(), "call String.appendChar 2")).flatten.toList
+                    state.copy(lines = state.lines ++ strCmds ++ appendCmds)
                 case _ => state
         else if children.length == 2 then
             children.head match
@@ -368,12 +372,28 @@ case class ExpressionTerm( override val children : List[ProgramElement] ) extend
                 case _ => state
         else if children.length == 6 then
             children.head match
-                case IDToken(classID) =>
+                case IDToken(objID) =>
                     children.drop(2).head match
                         case IDToken(methodID) =>
-                            val childState = generateChildCode(state, children)
+                            val classID = if state.classSymTable.map.contains(objID) then
+                                state.classSymTable.map(objID).symType
+                            else if state.subSymTable.map.contains(objID) then
+                                state.subSymTable.map(objID).symType
+                            else
+                                objID
+                            val pushCmds = if state.classSymTable.map.contains(objID) then
+                                List("push " + state.classSymTable.map(objID).kind + " " + state.classSymTable.map(objID).index.toString())
+                            else if state.subSymTable.map.contains(objID) then
+                                List("push " + state.subSymTable.map(objID).kind + " " + state.subSymTable.map(objID).index.toString())
+                            else
+                                Nil
+                            val childState = generateChildCode(state.copy(lines = state.lines ++ pushCmds), children)
                             val numArgs = children.drop(4).head match
-                                case exprList: ExpressionList => exprList.getNumExprs(exprList.children)
+                                case exprList: ExpressionList =>
+                                    if objID == classID then
+                                        exprList.getNumExprs(exprList.children)
+                                    else
+                                        exprList.getNumExprs(exprList.children) + 1
                                 case _ => 0
                             val callCmds = List("call " + classID + "." + methodID + " " + numArgs.toString())
                             state.copy(lines = childState.lines ++ callCmds)
