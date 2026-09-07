@@ -192,19 +192,37 @@ case class StatementList( override val children : List[ProgramElement] ) extends
 case class LetStatement( override val children : List[ProgramElement] ) extends ProgramElement(children, "letStatement"):
 
     override def generateCode(state: CodeGeneratorState): CodeGeneratorState =
-        val childState = generateChildCode(state, children)
-        val popCmds = children.drop(1).head match
-            case IDToken(id) =>
-                if state.classSymTable.map.contains(id) then
-                    val sym = state.classSymTable.map(id)
-                    List("pop " + sym.kind + " " + sym.index)
-                else if state.subSymTable.map.contains(id) then
-                    val sym = state.subSymTable.map(id)
-                    List("pop " + sym.kind + " " + sym.index)
-                else
-                    Nil
-            case _ => Nil
-        state.copy(lines = childState.lines ++ popCmds)
+        val eqIdx = children.indexOf(SymbolToken('='))
+        val childState = generateChildCode(state, children.drop(eqIdx))
+        children.drop(2).head match
+            case SymbolToken('[') =>
+                val idxState = children.drop(3).head.generateCode(childState)
+                val arrPopCmds = children.drop(1).head match
+                    case IDToken(id) =>
+                        if state.classSymTable.map.contains(id) then
+                            val sym = state.classSymTable.map(id)
+                            List("push " + sym.kind + " " + sym.index, "add", "pop pointer 1", "pop that 0")
+                        else if state.subSymTable.map.contains(id) then
+                            val sym = state.subSymTable.map(id)
+                            List("push " + sym.kind + " " + sym.index, "add", "pop pointer 1", "pop that 0")
+                        else
+                            Nil
+                    case _ => Nil
+                state.copy(lines = idxState.lines ++ arrPopCmds)
+            case SymbolToken('=') =>
+                val popCmds = children.drop(1).head match
+                    case IDToken(id) =>
+                        if state.classSymTable.map.contains(id) then
+                            val sym = state.classSymTable.map(id)
+                            List("pop " + sym.kind + " " + sym.index)
+                        else if state.subSymTable.map.contains(id) then
+                            val sym = state.subSymTable.map(id)
+                            List("pop " + sym.kind + " " + sym.index)
+                        else
+                            Nil
+                    case _ => Nil
+                state.copy(lines = childState.lines ++ popCmds)
+            case _ => state
         
 case class IfStatement( override val children : List[ProgramElement] ) extends ProgramElement(children, "ifStatement"):
 
@@ -362,13 +380,30 @@ case class ExpressionTerm( override val children : List[ProgramElement] ) extend
                     state.copy(lines = childState.lines ++ List("not"))
                 case _ => generateChildCode(state, children)
         else if children.length == 4 then
-            children.head match
-                case IDToken(id) =>
-                    val childState = generateChildCode(state, children)
-                    val numArgs = children.drop(2).head match
-                        case exprList: ExpressionList => exprList.getNumExprs(exprList.children)
-                        case _ => 0
-                    state.copy(lines = childState.lines ++ List("call " + id + " " + numArgs.toString()))
+            children.drop(1).head match
+                case SymbolToken('.') => 
+                    children.head match
+                        case IDToken(id) =>
+                            val childState = generateChildCode(state, children)
+                            val numArgs = children.drop(2).head match
+                                case exprList: ExpressionList => exprList.getNumExprs(exprList.children)
+                                case _ => 0
+                            state.copy(lines = childState.lines ++ List("call " + id + " " + numArgs.toString()))
+                        case _ => state
+                case SymbolToken('[') =>
+                    val idxState = children.drop(2).head.generateCode(state)
+                    val pushCmds = children.head match
+                        case IDToken(id) =>
+                            if state.classSymTable.map.contains(id) then
+                                val sym = state.classSymTable.map(id)
+                                List("push " + sym.kind + " " + sym.index.toString())
+                            else if state.subSymTable.map.contains(id) then
+                                val sym = state.subSymTable.map(id)
+                                List("push " + sym.kind + " " + sym.index)
+                            else
+                                Nil
+                        case _ => Nil
+                    state.copy(lines = idxState.lines ++ pushCmds ++ List("add", "pop pointer 1", "push that 0"))
                 case _ => state
         else if children.length == 6 then
             children.head match
